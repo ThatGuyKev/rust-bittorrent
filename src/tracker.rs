@@ -1,8 +1,9 @@
-use crate::peer::peer::Peers;
+use crate::peer::Peers;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_TRACKER_PORT: usize = 6881;
 
+// Not used now, but for reference
 #[derive(Serialize, Deserialize)]
 pub struct TrackerRequest {
     pub info_hash: [u8; 20],
@@ -28,3 +29,4 @@ pub struct Tracker {
     pub left: usize,
     pub peers: Peers,
 }
+

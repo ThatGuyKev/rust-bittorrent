@@ -1,11 +1,12 @@
-use crate::torrent::pieces::Pieces;
+use crate::pieces::Pieces;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
-use crate::peer::peer::Peers;
-use crate::tracker::tracker::{DEFAULT_TRACKER_PORT, Tracker, TrackerRequest, TrackerResponse};
+use crate::peer::{Handshake, Peers};
+use crate::tracker::{DEFAULT_TRACKER_PORT, Tracker, TrackerResponse};
 
 use crate::utils::url_encode;
 
@@ -109,12 +110,60 @@ impl Torrent {
             url_encode(&self.info_hash)
         );
         let client = reqwest::Client::new();
-        let body = client.get(&url).query(&params).send().await?.bytes().await?;
+        let body = client
+            .get(&url)
+            .query(&params)
+            .send()
+            .await?
+            .bytes()
+            .await?;
         println!("Tracker Response Body: {:?}", body);
 
         let tracker_response: TrackerResponse = serde_bencode::from_bytes(&body)?;
         println!("Tracker Response {:?}", tracker_response);
         self.tracker.peers = tracker_response.peers;
+        Ok(())
+    }
+
+    pub async fn start_download(&self) -> Result<(), anyhow::Error> {
+        println!(
+            "Starting download for torrent: {:?}",
+            self.torrent_file.info.name
+        );
+        println!("Total size: {} bytes", self.torrent_file.info.length);
+        let peer = &self.tracker.peers.0[0];
+        println!("Connecting to {} peer", peer.ip_address);
+
+        let mut stream = TcpStream::connect(format!("{}:{}", peer.ip_address, peer.port)).await?;
+
+        stream.write(&[19]).await?;
+        stream.write(b"BitTorrent protocol").await?;
+        stream.write(b"00000000").await?;
+        stream.write(&self.info_hash).await?;
+        stream
+            .write(&serde_bencode::to_bytes(&self.client_id)?)
+            .await?;
+
+        let mut buffer = [0; 68];
+        stream.read(&mut buffer).await?;
+        let decoded_handshake = Handshake {
+            length: buffer[0],
+            bittorrent_protocol: buffer[1..20].try_into().unwrap(),
+            reserved: buffer[20..28].try_into().unwrap(),
+            info_hash: buffer[28..48].try_into().unwrap(),
+            peer_id: buffer[48..68].try_into().unwrap(),
+        };
+        println!("Decoded handshake");
+        println!("Protocol Length: {}", decoded_handshake.length);
+        println!(
+            "Bittorrent Protocol: {}",
+            hex::encode(decoded_handshake.bittorrent_protocol)
+        );
+        println!("Reserved : {:?}", hex::encode(decoded_handshake.reserved));
+        println!("Info Hash : {:?}", hex::encode(decoded_handshake.info_hash));
+        println!("peer ID {:?}", hex::encode(decoded_handshake.peer_id));
+
+        println!("To be downloaded...");
         Ok(())
     }
 }
