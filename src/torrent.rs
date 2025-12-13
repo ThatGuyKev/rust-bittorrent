@@ -5,8 +5,8 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::peer::{Handshake, Peers};
-use crate::tracker::{DEFAULT_TRACKER_PORT, Tracker, TrackerResponse};
+use crate::peer::{Handshake, PeerConnection, PeerMessage};
+use crate::tracker::{DEFAULT_TRACKER_PORT, Peers, Tracker, TrackerResponse};
 
 use crate::utils::url_encode;
 
@@ -125,45 +125,39 @@ impl Torrent {
         Ok(())
     }
 
-    pub async fn start_download(&self) -> Result<(), anyhow::Error> {
+    pub async fn start_download(&mut self) -> Result<(), anyhow::Error> {
         println!(
             "Starting download for torrent: {:?}",
             self.torrent_file.info.name
         );
         println!("Total size: {} bytes", self.torrent_file.info.length);
-        let peer = &self.tracker.peers.0[0];
+        let peer = &mut self.tracker.peers.0[0];
         println!("Connecting to {} peer", peer.ip_address);
 
-        let mut stream = TcpStream::connect(format!("{}:{}", peer.ip_address, peer.port)).await?;
+        peer.establish_connection().await?;
+        println!("Connected to peer at {}:{}", peer.ip_address, peer.port);
 
-        stream.write(&[19]).await?;
-        stream.write(b"BitTorrent protocol").await?;
-        stream.write(b"00000000").await?;
-        stream.write(&self.info_hash).await?;
-        stream
-            .write(&serde_bencode::to_bytes(&self.client_id)?)
-            .await?;
-
-        let mut buffer = [0; 68];
-        stream.read(&mut buffer).await?;
-        let decoded_handshake = Handshake {
-            length: buffer[0],
-            bittorrent_protocol: buffer[1..20].try_into().unwrap(),
-            reserved: buffer[20..28].try_into().unwrap(),
-            info_hash: buffer[28..48].try_into().unwrap(),
-            peer_id: buffer[48..68].try_into().unwrap(),
+        let handshake = Handshake {
+            length: 19,
+            bittorrent_protocol: *b"BitTorrent protocol",
+            reserved: [0; 8],
+            info_hash: self.info_hash,
+            peer_id: self.client_id.as_bytes().try_into().unwrap(),
         };
-        println!("Decoded handshake");
-        println!("Protocol Length: {}", decoded_handshake.length);
-        println!(
-            "Bittorrent Protocol: {}",
-            hex::encode(decoded_handshake.bittorrent_protocol)
-        );
-        println!("Reserved : {:?}", hex::encode(decoded_handshake.reserved));
-        println!("Info Hash : {:?}", hex::encode(decoded_handshake.info_hash));
-        println!("peer ID {:?}", hex::encode(decoded_handshake.peer_id));
 
-        println!("To be downloaded...");
+        peer.write(&PeerMessage::Handshake(handshake)).await?;
+
+        if let Some(message) = peer.next().await? {
+            match message {
+                PeerMessage::Handshake(response_handshake) => {
+                    println!("Received handshake from peer: {:?}", response_handshake);
+                }
+                _ => {
+                    println!("Unexpected message received from peer");
+                }
+            }
+        }
+
         Ok(())
     }
 }
