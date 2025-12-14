@@ -6,6 +6,9 @@ use std::vec;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+const RESERVED_LENGTH_BYTES: usize = 4;
+const RESERVED_TAG_BYTES: usize = 1;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Peer {
     pub peer_id: [u8; 20],
@@ -102,7 +105,7 @@ impl PeerConnection {
         Ok(PeerConnection {
             stream,
             // TODO: find a way to calculate a suitable buffer size
-            buffer: vec![0; 4096],
+            buffer: vec![0; 100 * 1024 * 1024],
             cursor: 0,
         })
     }
@@ -153,7 +156,7 @@ impl PeerConnection {
         );
         let len = get_len(&mut buf)?;
         println!("Peeked message length: {}", len);
-        if buf.has_remaining()  {
+        if buf.has_remaining() {
             let next_byte = peek_u8(&mut buf)?;
             println!("Next byte (message ID): {}", next_byte);
         } else {
@@ -168,7 +171,6 @@ impl PeerConnection {
 
         match PeerMessage::check(&mut buf) {
             Ok(_) => {
-
                 buf.set_position(0);
 
                 let frame = PeerMessage::parse(&mut buf)?;
@@ -213,19 +215,30 @@ impl PeerConnection {
 
                 self.stream.write_all(&buf).await?;
             }
+            PeerMessage::Request(request_payload) => {
+                let payload_bytes = request_payload.as_bytes_mut()?;
+
+                println!("Request payload length: {}", payload_bytes.len());
+                let mut buf = Vec::with_capacity(
+                    RESERVED_LENGTH_BYTES + RESERVED_TAG_BYTES + payload_bytes.len(),
+                );
+                let len_slice =
+                    u32::to_be_bytes(RESERVED_TAG_BYTES as u32 + payload_bytes.len() as u32);
+
+                buf.put_slice(&len_slice);
+                buf.put_u8(6 as u8);
+                buf.put_slice(&payload_bytes);
+                println!("Buffer to send: {:x?}", buf);
+
+                self.stream.write_all(&buf).await?;
+               
+            }
             _ => {
                 return Err(anyhow::anyhow!(
                     "Only handshake message is implemented for writing"
                 ));
             }
         }
-        // stream.write(&[19]).await?;
-        // stream.write(b"BitTorrent protocol").await?;
-        // stream.write(b"00000000").await?;
-        // stream.write(&self.info_hash).await?;
-        // stream
-        //     .write(&serde_bencode::to_bytes(&self.client_id)?)
-        //     .await?;
 
         Ok(())
     }
@@ -256,7 +269,7 @@ pub enum PeerMessage {
     // 'request' messages contain an index, begin, and length.
     // The last two are byte offsets. Length is generally a power of two unless it gets truncated by the end of the file.
     // All current implementations use 2^14 (16 kiB), and close connections which request an amount greater than that.
-    Request(PeerRequestPayload),
+    Request(PeerRequest),
     // 'piece' messages contain an index, begin, and piece. Note that they are correlated with request messages implicitly.
     // It's possible for an unexpected piece to arrive if choke and unchoke messages are sent in quick succession and/or transfer is going very slowly.
     Piece(PiecePayload),
@@ -272,23 +285,41 @@ pub enum PeerMessage {
 
 type BitfieldPayload = Vec<u8>;
 #[derive(Debug, Serialize, Deserialize)]
-struct CancelPayload {
-    index: usize,
-    begin: usize,
-    length: usize,
+pub struct CancelPayload {
+    pub index: usize,
+    pub begin: usize,
+    pub length: usize,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct PiecePayload {
-    index: usize,
-    begin: usize,
-    piece: Vec<u8>,
+pub struct PiecePayload {
+    pub index: usize,
+    pub begin: usize,
+    pub piece: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct PeerRequestPayload {
+pub struct PeerRequest {
     index: usize,
     begin: usize,
-    length: usize,
+    length: u32,
+}
+
+impl PeerRequest {
+    pub fn new(index: usize, begin: usize, length: u32) -> Self {
+        PeerRequest {
+            index,
+            begin,
+            length,
+        }
+    }
+
+    pub fn as_bytes_mut(&self) -> Result<Vec<u8>, anyhow::Error> {
+        let mut manual_bytes = Vec::new();
+        manual_bytes.extend_from_slice(&(self.index as u32).to_be_bytes());
+        manual_bytes.extend_from_slice(&(self.begin as u32).to_be_bytes());
+        manual_bytes.extend_from_slice(&self.length.to_be_bytes());
+        return Ok(manual_bytes);
+    }
 }
 
 impl PeerMessage {
@@ -302,7 +333,6 @@ impl PeerMessage {
     }
 
     pub fn parse(src: &mut Cursor<&[u8]>) -> Result<PeerMessage, anyhow::Error> {
-        println!("Parsing message from buffer at position {}", src.position());
         let len = get_len(src)?;
 
         println!(
@@ -323,7 +353,7 @@ impl PeerMessage {
             }
             6 => {
                 // read the payload and convert to request struct
-                PeerMessage::Request(PeerRequestPayload {
+                PeerMessage::Request(PeerRequest {
                     index: 0,
                     begin: 0,
                     length: 0,
@@ -331,10 +361,14 @@ impl PeerMessage {
             }
             7 => {
                 // read the payload and convert to piece struct
+
+                let payload = get_payload(src, (len - 1) as usize)?;
+
+                println!("Decoded piece payload size: {}", payload.len());
                 PeerMessage::Piece(PiecePayload {
                     index: 0,
                     begin: 0,
-                    piece: vec![],
+                    piece: payload,
                 })
             }
             8 => {
@@ -401,7 +435,9 @@ impl fmt::Display for PeerMessage {
             PeerMessage::Request(request_payload) => {
                 format!("Request => {:?}", request_payload).fmt(fmt)
             }
-            PeerMessage::Piece(piece_payload) => format!("Piece => {:?}", piece_payload).fmt(fmt),
+            PeerMessage::Piece(piece_payload) => {
+                format!("Piece => {:?}", piece_payload.index).fmt(fmt)
+            }
             PeerMessage::Cancel(cancel_payload) => {
                 format!("Cancel => {:?}", cancel_payload).fmt(fmt)
             }

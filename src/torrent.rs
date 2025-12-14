@@ -4,7 +4,7 @@ use sha1::{Digest, Sha1};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::peer::PeerMessage;
+use crate::peer::{PeerMessage, PeerRequest};
 use crate::tracker::{DEFAULT_TRACKER_PORT, Peers, Tracker, TrackerResponse};
 
 use crate::utils::url_encode;
@@ -130,7 +130,7 @@ impl Torrent {
             self.torrent_file.info.name
         );
         println!("Total size: {} bytes", self.torrent_file.info.length);
-        let peer = &mut self.tracker.peers.0[0];
+        let peer = &mut self.tracker.peers.0[1];
         println!("Connecting to {} peer", peer.ip_address);
 
         peer.establish_connection().await?;
@@ -160,6 +160,26 @@ impl Torrent {
                 }
                 message => {
                     println!("Expected Unchoke message, but received '{}'.", message);
+                }
+            }
+        }
+
+        println!("Starting to request pieces...");
+
+        let request_message = PeerRequest::new(0, 0, 16 * 1024);
+
+        peer.send(&PeerMessage::Request(request_message)).await?;
+
+        if let Some(piece) = peer.next().await? {
+            match piece {
+                PeerMessage::Piece(piece_payload) => {
+                    println!("Received Piece message from peer. {}", piece_payload.index);
+                    let file_path = format!("piece_{}.dat", piece_payload.index);
+                    tokio::fs::write(&file_path, &piece_payload.piece).await?;
+                    println!("Saved piece to {}", file_path);
+                }
+                message => {
+                    println!("Expected Piece message, but received '{}'.", message);
                 }
             }
         }
