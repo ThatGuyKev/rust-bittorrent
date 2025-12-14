@@ -2,10 +2,9 @@ use crate::pieces::Pieces;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::AsyncReadExt;
 
-use crate::peer::{Handshake, PeerConnection, PeerMessage};
+use crate::peer::PeerMessage;
 use crate::tracker::{DEFAULT_TRACKER_PORT, Peers, Tracker, TrackerResponse};
 
 use crate::utils::url_encode;
@@ -137,23 +136,30 @@ impl Torrent {
         peer.establish_connection().await?;
         println!("Connected to peer at {}:{}", peer.ip_address, peer.port);
 
-        let handshake = Handshake {
-            length: 19,
-            bittorrent_protocol: *b"BitTorrent protocol",
-            reserved: [0; 8],
-            info_hash: self.info_hash,
-            peer_id: self.client_id.as_bytes().try_into().unwrap(),
-        };
+        peer.handshake(self.info_hash, self.client_id.clone())
+            .await?;
 
-        peer.write(&PeerMessage::Handshake(handshake)).await?;
+        print!("Handshake successful. with peer {:x?}\n", peer.peer_id);
 
-        if let Some(message) = peer.next().await? {
-            match message {
-                PeerMessage::Handshake(response_handshake) => {
-                    println!("Received handshake from peer: {:?}", response_handshake);
+        if let Some(bitfield) = peer.next().await? {
+            match bitfield {
+                PeerMessage::Bitfield(payload) => {
+                    println!("Received Bitfield message with payload: {:x?}", payload);
                 }
-                _ => {
-                    println!("Unexpected message received from peer");
+                message => {
+                    println!("Expected Bitfield message, but received '{}'.", message);
+                }
+            }
+        }
+        peer.send(&PeerMessage::Interested).await?;
+        println!("Sent Interested message to peer.");
+        if let Some(unchoke) = peer.next().await? {
+            match unchoke {
+                PeerMessage::Unchoke => {
+                    println!("Received Unchoke message from peer.");
+                }
+                message => {
+                    println!("Expected Unchoke message, but received '{}'.", message);
                 }
             }
         }

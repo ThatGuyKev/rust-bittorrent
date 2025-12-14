@@ -32,8 +32,6 @@ pub struct Tracker {
     pub peers: Peers,
 }
 
-
-
 #[derive(Debug, Serialize)]
 pub struct Peers(pub Vec<Peer>);
 
@@ -64,6 +62,7 @@ impl<'de> Deserialize<'de> for Peers {
                 Ok(Peers(
                     v.chunks_exact(6)
                         .map(|chunk| Peer {
+                            peer_id: [0; 20],
                             ip_address: format!(
                                 "{}.{}.{}.{}",
                                 chunk[0], chunk[1], chunk[2], chunk[3]
