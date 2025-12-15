@@ -20,7 +20,7 @@ pub struct TrackerRequest {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrackerResponse {
     pub interval: usize,
-    pub peers: Peers,
+    pub peers: Option<Peers>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
