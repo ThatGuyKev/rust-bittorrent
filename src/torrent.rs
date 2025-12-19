@@ -374,7 +374,11 @@ impl Torrent {
         println!("Torrent file length: {}", self.torrent_file.info.length);
         println!("File download completed. Saving to disk...");
 
-        tokio::fs::write(&self.torrent_file.info.name, &file_data).await?;
+        tokio::fs::write(
+            format!("downloads/{}", &self.torrent_file.info.name),
+            &file_data,
+        )
+        .await?;
         println!("Saved piece to {}", self.torrent_file.info.name);
 
         Ok(())
