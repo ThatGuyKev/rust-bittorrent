@@ -1,4 +1,4 @@
-use crate::peer::Peer;
+use crate::peer::peer::Peer;
 use serde::{Deserialize, Serialize};
 
 use serde::de::{Deserializer, Visitor};
@@ -70,6 +70,7 @@ impl<'de> Deserialize<'de> for Peers {
                             port: format!("{}", u16::from_be_bytes([chunk[4], chunk[5]])),
                             connection: None,
                             connected: false,
+                            extensions: None,
                         })
                         .collect(),
                 ))

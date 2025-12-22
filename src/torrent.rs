@@ -1,15 +1,16 @@
-use std::f32::consts::E;
 use std::str::FromStr;
 
+use crate::peer::connection::STANDARD_BLOCK_SIZE;
+use crate::peer::extension::{
+    ExtensionHandshakePayload, ExtensionMessage, ExtensionMethods, MetadataData, MetadataMessage,
+};
+use crate::peer::message::{PeerMessage, PeerRequest};
 use crate::pieces::Pieces;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use tokio::fs::File;
+use tokio::fs::{File, metadata};
 use tokio::io::AsyncReadExt;
 
-use crate::peer::{
-    ExtensionHandshakePayload, ExtensionMethods, PeerMessage, PeerRequest, STANDARD_BLOCK_SIZE,
-};
 use crate::tracker::{DEFAULT_TRACKER_PORT, Peers, Tracker, TrackerResponse};
 
 use crate::utils::url_encode;
@@ -161,7 +162,7 @@ impl Torrent {
         println!("Parsed Magnet Link: {:?}", magnet_link);
 
         let mut new_torrent = Torrent {
-            client_id: "-TR2940-6wfG2wk6wWLc".to_string(),
+            client_id: "-TR2940-6wfG2wk6wWLa".to_string(),
             info_hash: magnet_link.info_hash,
             torrent_file: TorrentFile {
                 announce: magnet_link.tracker_url,
@@ -188,7 +189,7 @@ impl Torrent {
 
         new_torrent.update_tracker().await?;
 
-        let peer = &mut new_torrent.tracker.peers.0[1];
+        let peer = &mut new_torrent.tracker.peers.0[0];
         println!("Connecting to {} peer", peer.ip_address);
 
         peer.establish_connection().await?;
@@ -223,14 +224,22 @@ impl Torrent {
             .await?;
         println!("Sent Extension Handshake message to peer.");
 
-        if let Some(extension_handshake) = peer.next().await? {
-            match extension_handshake {
-                PeerMessage::ExtensionHandshake(payload) => {
-                    println!(
-                        "Received Extension Handshake message with payload: {:x?}",
-                        payload
-                    );
-                }
+        if let Some(message) = peer.next().await? {
+            match message {
+                PeerMessage::ExtensionMessage(ext_message) => match ext_message {
+                    ExtensionMessage::Handshake(payload) => {
+                        println!(
+                            "Received Extension Handshake message from peer. {:?}",
+                            payload
+                        );
+                        peer.extensions = Some(payload.m.clone());
+                    }
+                    _ => {
+                        println!(
+                            "Expected Extension Handshake message, but received different Extension message."
+                        );
+                    }
+                },
                 message => {
                     println!(
                         "Expected Extension Handshake message, but received '{}'.",
@@ -239,6 +248,50 @@ impl Torrent {
                 }
             }
         }
+
+        println!("Requesting Metadata...");
+        if let Some(supported_extensions) = peer.extensions {
+            let metadata_message =
+                MetadataMessage::new_request(0, supported_extensions.ut_metadata as usize);
+
+            peer.send(&PeerMessage::ExtensionMessage(ExtensionMessage::Metadata(
+                metadata_message,
+            )))
+            .await?;
+            println!("sent Metadata Request message to peer.");
+
+            if let Some(message) = peer.next().await? {
+                match message {
+                    PeerMessage::ExtensionMessage(ExtensionMessage::Metadata(metadata_payload)) => {
+                        println!(
+                            "Received Metadata message from peer. {:?}",
+                            metadata_payload
+                        );
+                        match metadata_payload {
+                            MetadataMessage::Data(data) => {
+                                println!(
+                                    "Received Metadata Data message with piece index: {}",
+                                    data.piece
+                                );
+                                // Here you would typically assemble the metadata pieces and decode the torrent file
+                                new_torrent.torrent_file.info = data.torrent_info.unwrap();
+                            }
+                            _ => {
+                                println!(
+                                    "Expected Metadata Data message, but received different Metadata message."
+                                );
+                            }
+                        }
+                    }
+                    message => {
+                        println!("Expected Metadata message, but received '{}'.", message);
+                    }
+                }
+            }
+        } else {
+            println!("Peer does not support any extensions.");
+        }
+
         Ok(new_torrent)
     }
 

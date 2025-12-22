@@ -1,3 +1,7 @@
+use std::io::Cursor;
+
+use bytes::Buf;
+
 pub fn decode_string(encoded_str: &str) -> (serde_json::Value, &str) {
     let col_pos = encoded_str.find(':').unwrap();
     let str_len = encoded_str[..col_pos].parse::<usize>().unwrap();
@@ -63,4 +67,38 @@ pub fn url_encode(bytes: &[u8]) -> String {
         encoded.push_str(&hex::encode(&[b]));
     }
     encoded
+}
+
+pub fn get_u8(src: &mut Cursor<&[u8]>) -> Result<u8, anyhow::Error> {
+    if !src.has_remaining() {
+        return Err(anyhow::anyhow!("Incomplete"));
+    }
+
+    Ok(src.get_u8())
+}
+
+pub fn get_len(src: &mut Cursor<&[u8]>) -> Result<u32, anyhow::Error> {
+    if src.remaining() < 4 {
+        return Err(anyhow::anyhow!("Incomplete"));
+    }
+    Ok(src.get_u32())
+}
+
+pub fn peek_u8(src: &mut Cursor<&[u8]>) -> Result<u8, anyhow::Error> {
+    if !src.has_remaining() {
+        return Err(anyhow::anyhow!("Incomplete"));
+    }
+
+    Ok(src.chunk()[0])
+}
+
+pub fn get_payload(src: &mut Cursor<&[u8]>, length: usize) -> Result<Vec<u8>, anyhow::Error> {
+    if src.remaining() < length {
+        return Err(anyhow::anyhow!("Incomplete"));
+    }
+
+    let mut payload = vec![0; length];
+    src.copy_to_slice(&mut payload);
+
+    Ok(payload)
 }
