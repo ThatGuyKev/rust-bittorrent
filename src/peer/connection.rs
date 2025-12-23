@@ -4,7 +4,7 @@ use std::io::Cursor;
 use tokio::io::AsyncWriteExt;
 use tokio::{io::AsyncReadExt, net::TcpStream};
 
-use crate::utils::{get_len, get_payload, get_u8, peek_u8};
+use crate::utils::{get_len, peek_u8};
 
 use crate::peer::message::PeerMessage;
 pub struct PeerConnection {
@@ -183,7 +183,6 @@ impl PeerConnection {
         Ok(())
     }
 }
-
 
 impl fmt::Debug for PeerConnection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

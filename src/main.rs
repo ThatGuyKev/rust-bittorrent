@@ -9,11 +9,13 @@ async fn main() -> anyhow::Result<()> {
 
     // torrent.start_download().await?;
 
-    let mut torrent = Torrent::from_magnet("magnet:?xt=urn:btih:c5fb9894bdaba464811b088d806bdd611ba490af&dn=magnet3.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce").await?;
+    let mut torrent = Torrent::from_magnet("magnet:?xt=urn:btih:3f994a835e090238873498636b98a3e78d1c34ca&dn=magnet2.gif&tr=http%3A%2F%2Fbittorrent-test-tracker.codecrafters.io%2Fannounce").await?;
     // println!("New Torrent from Magnet Parsed {:?}", torrent);
     // torrent.start_download().await?;
 
     println!("Torrent from Magnet Parsed {:?}", torrent);
+
+    torrent.start_download().await?;
 
     anyhow::Ok(())
 }

@@ -2,13 +2,13 @@ use std::str::FromStr;
 
 use crate::peer::connection::STANDARD_BLOCK_SIZE;
 use crate::peer::extension::{
-    ExtensionHandshakePayload, ExtensionMessage, ExtensionMethods, MetadataData, MetadataMessage,
+    ExtensionHandshakePayload, ExtensionMessage, ExtensionMethods, MetadataMessage,
 };
 use crate::peer::message::{PeerMessage, PeerRequest};
 use crate::pieces::Pieces;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use tokio::fs::{File, metadata};
+use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
 use crate::tracker::{DEFAULT_TRACKER_PORT, Peers, Tracker, TrackerResponse};

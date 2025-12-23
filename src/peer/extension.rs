@@ -1,10 +1,6 @@
 use crate::torrent::TorrentInfo;
-use crate::utils::{get_len, get_payload, get_u8, peek_u8};
-use core::fmt;
-use std::{
-    any,
-    io::{Cursor, Read},
-};
+use crate::utils::{get_payload, get_u8};
+use std::io::Cursor;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
@@ -25,8 +21,7 @@ pub struct MetadataData {
     pub piece: usize,
     pub total_size: usize,
 
-
-    pub torrent_info: Option<TorrentInfo>
+    pub torrent_info: Option<TorrentInfo>,
 }
 #[derive(Deserialize, Debug, Serialize)]
 pub struct MetadataRequest {
@@ -44,12 +39,12 @@ impl MetadataMessage {
         })
     }
 
-    pub fn new_data(piece: usize, total_size: usize, data: Vec<u8>) -> Self {
+    pub fn new_data(piece: usize, total_size: usize, info: Option<TorrentInfo>) -> Self {
         MetadataMessage::Data(MetadataData {
             msg_type: 1,
             piece,
             total_size,
-            torrent_info: None
+            torrent_info: info,
         })
     }
 
@@ -92,7 +87,7 @@ impl MetadataMessage {
                 msg_type,
                 piece,
                 total_size,
-                torrent_info: _
+                torrent_info: _,
             }) => {
                 let dict = serde_bencode::to_bytes(&serde_bencode::value::Value::Dict(
                     vec![
@@ -206,10 +201,10 @@ impl ExtensionMessage {
                 println!("Metadata Payload Bytes: {:x?}", payload_bytes);
                 let mut metadata_message: MetadataData = serde_bencode::from_bytes(&payload_bytes)?;
                 let start_of_data = len as usize - 2 - metadata_message.total_size;
-                let torrent_info: TorrentInfo = serde_bencode::from_bytes(&payload_bytes[start_of_data..])?;
+                let torrent_info: TorrentInfo =
+                    serde_bencode::from_bytes(&payload_bytes[start_of_data..])?;
                 metadata_message.torrent_info = Some(torrent_info);
 
-            
                 ExtensionMessage::Metadata(MetadataMessage::Data(metadata_message))
             }
             ext_msg_id => {

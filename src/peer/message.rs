@@ -1,4 +1,4 @@
-use crate::utils::{get_len, get_payload, get_u8, peek_u8};
+use crate::utils::{get_len, get_payload, get_u8};
 use bytes::{Buf, BufMut};
 use serde::{Deserialize, Serialize};
 use std::{fmt, io::Cursor};
