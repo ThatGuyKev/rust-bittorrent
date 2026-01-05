@@ -1,0 +1,39 @@
+syntax = "proto3";
+package event;
+
+// Base event structure
+message Event {
+  string event_type = 1;
+  bytes payload = 2;
+}
+
+// Event response
+message EventResponse {
+  bool success = 1;
+  bytes data = 2;
+  string error = 3;
+}
+
+// Torrent events - example domain
+message StartTorrentRequest {
+  string torrent_path = 1;
+  string download_dir = 2;
+}
+
+message StartTorrentResponse {
+  string torrent_id = 1;
+  string name = 2;
+  int64 total_size = 3;
+}
+
+message GetTorrentStatusRequest {
+  string torrent_id = 1;
+}
+
+message GetTorrentStatusResponse {
+  string torrent_id = 1;
+  string status = 2;
+  int64 downloaded = 3;
+  int64 total_size = 4;
+  double progress = 5;
+}

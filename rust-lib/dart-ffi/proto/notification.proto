@@ -1,0 +1,28 @@
+syntax = "proto3";
+package notification;
+
+// Base notification structure
+message Notification {
+  string notification_type = 1;
+  bytes payload = 2;
+}
+
+// Torrent notifications - example domain
+message TorrentProgressNotification {
+  string torrent_id = 1;
+  double progress = 2;
+  int64 downloaded = 3;
+  int64 total_size = 4;
+  int64 download_speed = 5;
+}
+
+message TorrentCompletedNotification {
+  string torrent_id = 1;
+  string name = 2;
+  int64 total_size = 3;
+}
+
+message TorrentErrorNotification {
+  string torrent_id = 1;
+  string error_message = 2;
+}
